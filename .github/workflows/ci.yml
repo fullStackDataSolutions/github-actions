@@ -1,53 +1,48 @@
 name: CI
-on:
-  workflow_call:
-    inputs:
-      working-directory:
-        required: true
-        type: string
-      node-version:
-        required: true
-        type: string
-      pnpm-version:
-        required: true
-        type: string
-
+on: workflow_call
+inputs:
+  working-directory:
+    required: true
+    type: string
+  node-version:
+    required: true
+    type: string
+  pnpm-version:
+    required: true
+    type: string
 jobs:
   build:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-
-      - name: Validate working-directory
+      - name: Validate working directory
         run: |
-          # Reject absolute paths and paths containing ..
-          if [[ "${{ inputs.working-directory }}" == *".."* ]] || [[ "${{ inputs.working-directory }}" == /* ]]; then
-            echo "Error: Invalid working-directory: ${{ inputs.working-directory }}"
-            echo "Path must be a relative path within the repository and cannot contain .."
+          if [[ "${{ inputs.working-directory }}" != "backend" && "${{ inputs.working-directory }}" != "frontend" ]]; then
+            echo "Error: Invalid working-directory. Must be 'backend' or 'frontend'."
             exit 1
           fi
-          # Ensure directory exists
-          if [ ! -d "${{ inputs.working-directory }}" ]; then
-            echo "Error: Directory '${{ inputs.working-directory }}' does not exist"
-            exit 1
-          fi
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ inputs.pnpm-version }}
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
-
       - name: Install dependencies
-        working-directory: ${{ inputs.working-directory }}
         run: pnpm install
-
-      - name: Typecheck
         working-directory: ${{ inputs.working-directory }}
+      - name: Typecheck
         run: pnpm typecheck
+        working-directory: ${{ inputs.working-directory }}
+      - name: Lint
+        run: pnpm lint
+        working-directory: ${{ inputs.working-directory }}
+      - name: Build
+        run: pnpm build
+        working-directory: ${{ inputs.working-directory }}
+      - name: Test
+        run: pnpm test
+        working-directory: ${{ inputs.working-directory }}
