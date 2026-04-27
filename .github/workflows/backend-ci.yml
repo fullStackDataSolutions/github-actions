@@ -35,7 +35,7 @@ jobs:
         run: pnpm install
 
       - name: Typecheck
-        run: pnpm pnpm typecheck
+        run: pnpm typecheck
 
       - name: Lint
         run: pnpm lint
