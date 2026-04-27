@@ -51,3 +51,17 @@ jobs:
       - name: Typecheck
         working-directory: ${{ inputs.working-directory }}
         run: pnpm typecheck
+
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint
+
+      - name: Build
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Test
+        working-directory: frontend
+        run: pnpm test
+
+      
