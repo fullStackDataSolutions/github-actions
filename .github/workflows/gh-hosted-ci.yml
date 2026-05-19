@@ -11,6 +11,14 @@ on:
       pnpm-version:
         required: true
         type: string
+      sonar-enabled:
+        required: false
+        type: boolean
+        default: false
+      nextjs-cache:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   setup:
@@ -44,10 +52,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
@@ -70,10 +78,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile --prefer-offline
@@ -98,10 +106,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile --prefer-offline
@@ -126,16 +134,44 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Test
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm test
+        run: pnpm test --coverage
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: ${{ inputs.working-directory }}/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: warn
+
+  sonar:
+    needs: test
+    if: ${{ inputs.sonar-enabled }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: ${{ inputs.working-directory }}/coverage
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   build:
     needs: [typecheck, lint, test]
@@ -154,13 +190,22 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-${{ inputs.working-directory }}-
-            ${{ runner.os }}-pnpm-${{ inputs.node-version }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-
+            ${{ runner.os }}-pnpm-${{ github.repository }}-${{ inputs.node-version }}-
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
         run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Cache Next.js build
+        if: ${{ inputs.nextjs-cache }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.working-directory }}/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         run: pnpm build
