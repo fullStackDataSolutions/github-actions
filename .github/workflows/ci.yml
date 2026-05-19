@@ -11,12 +11,18 @@ on:
       pnpm-version:
         required: true
         type: string
+      sonar-enabled:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate working-directory
         run: |
@@ -51,7 +57,16 @@ jobs:
 
       - name: Test
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm test
+        run: pnpm test --coverage
+
+      - name: SonarQube Scan
+        if: ${{ inputs.sonar-enabled }}
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Build
         working-directory: ${{ inputs.working-directory }}
