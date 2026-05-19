@@ -15,6 +15,10 @@ on:
         required: false
         type: boolean
         default: false
+      nextjs-cache:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -67,6 +71,16 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Cache Next.js build
+        if: ${{ inputs.nextjs-cache }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.working-directory }}/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-
 
       - name: Build
         working-directory: ${{ inputs.working-directory }}
