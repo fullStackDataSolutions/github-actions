@@ -61,7 +61,7 @@ jobs:
 
       - name: Test
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm test --coverage
+        run: pnpm test -- --coverage
 
       - name: SonarQube Scan
         if: ${{ inputs.sonar-enabled }}
