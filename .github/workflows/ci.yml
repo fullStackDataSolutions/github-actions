@@ -24,7 +24,7 @@ jobs:
   build:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -39,11 +39,11 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ inputs.pnpm-version }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: SonarQube Scan
         if: ${{ inputs.sonar-enabled }}
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v8
         with:
           projectBaseDir: ${{ inputs.working-directory }}
         env:
@@ -75,7 +75,7 @@ jobs:
 
       - name: Cache Next.js build
         if: ${{ inputs.nextjs-cache }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ inputs.working-directory }}/.next/cache
           key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
