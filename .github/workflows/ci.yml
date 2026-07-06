@@ -46,6 +46,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: ${{ inputs.pnpm-version }}
+          standalone: true
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
