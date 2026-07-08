@@ -140,6 +140,32 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+      - name: Cache Next.js build
+        if: ${{ inputs.nextjs-cache }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ inputs.working-directory }}/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm build
+
+      - name: Compute Next.js build artifact name
+        id: nextjs-artifact-name
+        run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Next.js build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.nextjs-artifact-name.outputs.name }}
+          path: ${{ inputs.working-directory }}/.next
+          retention-days: 1
+          include-hidden-files: true
+
   sonar:
     needs: quality
     if: ${{ inputs.sonar-enabled }}
@@ -178,7 +204,7 @@ jobs:
           fi
 
   e2e:
-    needs: [detect-e2e, build]
+    needs: [detect-e2e, quality]
     if: ${{ inputs.e2e-enabled && needs.detect-e2e.outputs.has-e2e == 'true' }}
     runs-on: ubuntu-latest
     services:
@@ -293,49 +319,3 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  build:
-    needs: [quality, detect-e2e]
-    if: ${{ !cancelled() && needs.quality.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ inputs.pnpm-version }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node-version }}
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-      - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm install --frozen-lockfile
-      - name: Cache Next.js build
-        if: ${{ inputs.nextjs-cache }}
-        uses: actions/cache@v6
-        with:
-          path: ${{ inputs.working-directory }}/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-
-      - name: Build
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm build
-      - name: Compute Next.js build artifact name
-        if: ${{ needs.detect-e2e.outputs.has-e2e == 'true' }}
-        id: nextjs-artifact-name
-        run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
-      - name: Upload Next.js build
-        if: ${{ needs.detect-e2e.outputs.has-e2e == 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.nextjs-artifact-name.outputs.name }}
-          path: ${{ inputs.working-directory }}/.next
-          retention-days: 1
-          include-hidden-files: true
