@@ -264,6 +264,7 @@ jobs:
           name: ${{ steps.artifact-name.outputs.name }}
           path: ${{ inputs.working-directory }}/.next
           retention-days: 1
+          include-hidden-files: true
 
   e2e:
     needs: [detect-e2e, e2e-build]
