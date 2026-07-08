@@ -281,11 +281,15 @@ jobs:
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+      - name: Compute artifact name
+        if: always()
+        id: artifact-name
+        run: echo "name=playwright-report-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ inputs.working-directory }}
+          name: ${{ steps.artifact-name.outputs.name }}
           path: ${{ inputs.working-directory }}/playwright-report
           retention-days: 7
           if-no-files-found: ignore
