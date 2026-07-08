@@ -54,20 +54,6 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
-          POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
-          POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
-        ports:
-          - 5432/tcp
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,51 +94,6 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test -- --coverage
 
-      - name: Detect e2e tests
-        id: detect-e2e
-        if: ${{ inputs.e2e-enabled }}
-        run: |
-          if [ -f "${{ inputs.working-directory }}/playwright.config.ts" ] || [ -f "${{ inputs.working-directory }}/playwright.config.js" ]; then
-            echo "has-e2e=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-e2e=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install Playwright browsers
-        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Run e2e stack setup
-        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' && inputs.e2e-setup-command != '' }}
-        run: ${{ inputs.e2e-setup-command }}
-        env:
-          E2E_POSTGRES_HOST: localhost
-          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
-          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
-          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
-          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
-
-      - name: Run e2e tests
-        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm test:e2e
-        env:
-          E2E_POSTGRES_HOST: localhost
-          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
-          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
-          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
-          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
-
-      - name: Upload Playwright report
-        if: ${{ always() && inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report-${{ inputs.working-directory }}
-          path: ${{ inputs.working-directory }}/playwright-report
-          retention-days: 7
-          if-no-files-found: ignore
-
       - name: SonarQube Scan
         if: ${{ inputs.sonar-enabled }}
         uses: SonarSource/sonarqube-scan-action@v8
@@ -176,3 +117,82 @@ jobs:
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         run: pnpm build
+
+  detect-e2e:
+    if: ${{ inputs.e2e-enabled }}
+    runs-on: self-hosted
+    outputs:
+      has-e2e: ${{ steps.detect.outputs.has-e2e }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect e2e tests
+        id: detect
+        run: |
+          if [ -f "${{ inputs.working-directory }}/playwright.config.ts" ] || [ -f "${{ inputs.working-directory }}/playwright.config.js" ]; then
+            echo "has-e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e:
+    needs: [build, detect-e2e]
+    if: ${{ inputs.e2e-enabled && needs.detect-e2e.outputs.has-e2e == 'true' }}
+    runs-on: self-hosted
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ inputs.pnpm-version }}
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Install Playwright browsers
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run e2e stack setup
+        if: ${{ inputs.e2e-setup-command != '' }}
+        run: ${{ inputs.e2e-setup-command }}
+        env:
+          E2E_POSTGRES_HOST: localhost
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+      - name: Run e2e tests
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm test:e2e
+        env:
+          E2E_POSTGRES_HOST: localhost
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+      - name: Compute artifact name
+        if: always()
+        id: artifact-name
+        run: echo "name=playwright-report-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact-name.outputs.name }}
+          path: ${{ inputs.working-directory }}/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
