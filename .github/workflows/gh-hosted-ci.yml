@@ -50,6 +50,19 @@ on:
         required: false
         type: string
         default: postgres
+      e2e-infisical-environment:
+        required: false
+        type: string
+        default: ''
+        description: >-
+          Infisical environment slug to load secrets from for the e2e job.
+          Leave empty to skip Infisical entirely (both the e2e stack setup
+          command and the e2e test run boot with only the env already set).
+          Reads BACKEND_INFISICAL_SITE_URL/CLIENT_ID/CLIENT_SECRET/PROJECT_ID
+          for the e2e stack setup step and
+          FRONTEND_INFISICAL_SITE_URL/CLIENT_ID/CLIENT_SECRET/PROJECT_ID for
+          the e2e test run, via `secrets: inherit` on the caller's `uses:`
+          block.
 
 jobs:
   setup:
@@ -272,6 +285,11 @@ jobs:
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+          INFISICAL_SITE_URL: ${{ secrets.BACKEND_INFISICAL_SITE_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.BACKEND_INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.BACKEND_INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.BACKEND_INFISICAL_PROJECT_ID }}
+          INFISICAL_ENVIRONMENT: ${{ inputs.e2e-infisical-environment }}
       - name: Run e2e tests
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test:e2e
@@ -281,11 +299,20 @@ jobs:
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+          INFISICAL_SITE_URL: ${{ secrets.FRONTEND_INFISICAL_SITE_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.FRONTEND_INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.FRONTEND_INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.FRONTEND_INFISICAL_PROJECT_ID }}
+          INFISICAL_ENVIRONMENT: ${{ inputs.e2e-infisical-environment }}
+      - name: Compute artifact name
+        if: always()
+        id: artifact-name
+        run: echo "name=playwright-report-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ inputs.working-directory }}
+          name: ${{ steps.artifact-name.outputs.name }}
           path: ${{ inputs.working-directory }}/playwright-report
           retention-days: 7
           if-no-files-found: ignore
