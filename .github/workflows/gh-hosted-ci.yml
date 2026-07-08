@@ -231,6 +231,14 @@ jobs:
         with:
           name: ${{ steps.nextjs-artifact-name.outputs.name }}
           path: ${{ inputs.working-directory }}/.next
+      - name: Prepare standalone Next.js server assets
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -d .next/standalone ]; then
+            cp -r public .next/standalone/public
+            mkdir -p .next/standalone/.next
+            cp -r .next/static .next/standalone/.next/static
+          fi
       - name: Cache e2e setup dependencies
         if: ${{ inputs.e2e-setup-cache-path != '' }}
         uses: actions/cache@v6
