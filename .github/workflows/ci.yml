@@ -137,6 +137,12 @@ jobs:
         if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test:e2e
+        env:
+          E2E_POSTGRES_HOST: localhost
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
 
       - name: Upload Playwright report
         if: ${{ always() && inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
