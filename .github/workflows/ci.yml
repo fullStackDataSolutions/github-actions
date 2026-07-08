@@ -140,7 +140,7 @@ jobs:
     runs-on: self-hosted
     services:
       postgres:
-        image: postgres:18
+        image: postgis/postgis:18-3.6
         env:
           POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
