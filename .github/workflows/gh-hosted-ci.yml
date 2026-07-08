@@ -233,7 +233,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -268,7 +268,7 @@ jobs:
         run: ${{ inputs.e2e-setup-command }}
         env:
           E2E_POSTGRES_HOST: localhost
-          E2E_POSTGRES_PORT: 5432
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
