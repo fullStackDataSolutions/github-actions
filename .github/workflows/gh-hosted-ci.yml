@@ -238,6 +238,12 @@ jobs:
             cp -r public .next/standalone/public
             mkdir -p .next/standalone/.next
             cp -r .next/static .next/standalone/.next/static
+            # Next's output file tracer doesn't always capture every
+            # transitive dependency correctly (e.g. optional/dynamic
+            # requires) - symlink the fully-installed node_modules over
+            # the tracer's possibly-incomplete one rather than trust it.
+            rm -rf .next/standalone/node_modules
+            ln -s "$(pwd)/node_modules" .next/standalone/node_modules
           fi
       - name: Cache e2e setup dependencies
         if: ${{ inputs.e2e-setup-cache-path != '' }}
