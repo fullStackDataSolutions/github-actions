@@ -275,6 +275,12 @@ jobs:
       - name: Run e2e tests
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test:e2e
+        env:
+          E2E_POSTGRES_HOST: localhost
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
