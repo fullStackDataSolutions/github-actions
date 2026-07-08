@@ -19,10 +19,55 @@ on:
         required: false
         type: boolean
         default: false
+      e2e-enabled:
+        required: false
+        type: boolean
+        default: true
+        description: >-
+          Whether to run e2e tests when they're detected (a
+          playwright.config.ts/.js in working-directory). Set to false to
+          skip e2e entirely regardless of detection.
+      e2e-setup-command:
+        required: false
+        type: string
+        default: ''
+        description: >-
+          Optional shell command (or path to a script in the caller repo)
+          run before the e2e tests, e.g. to start sibling services and run
+          migrations. Receives E2E_POSTGRES_HOST/PORT/USER/PASSWORD/DB env
+          vars pointing at the postgres service below. Needs
+          `secrets: inherit` on the caller's `uses:` block if it requires
+          secrets.
+      e2e-postgres-user:
+        required: false
+        type: string
+        default: postgres
+      e2e-postgres-password:
+        required: false
+        type: string
+        default: postgres
+      e2e-postgres-db:
+        required: false
+        type: string
+        default: postgres
 
 jobs:
   build:
     runs-on: self-hosted
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,6 +107,45 @@ jobs:
       - name: Test
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test -- --coverage
+
+      - name: Detect e2e tests
+        id: detect-e2e
+        if: ${{ inputs.e2e-enabled }}
+        run: |
+          if [ -f "${{ inputs.working-directory }}/playwright.config.ts" ] || [ -f "${{ inputs.working-directory }}/playwright.config.js" ]; then
+            echo "has-e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Playwright browsers
+        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run e2e stack setup
+        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' && inputs.e2e-setup-command != '' }}
+        run: ${{ inputs.e2e-setup-command }}
+        env:
+          E2E_POSTGRES_HOST: localhost
+          E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
+          E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
+          E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+
+      - name: Run e2e tests
+        if: ${{ inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ always() && inputs.e2e-enabled && steps.detect-e2e.outputs.has-e2e == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ inputs.working-directory }}
+          path: ${{ inputs.working-directory }}/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: SonarQube Scan
         if: ${{ inputs.sonar-enabled }}
