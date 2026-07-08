@@ -50,6 +50,15 @@ on:
         required: false
         type: string
         default: postgres
+      e2e-postgres-image:
+        required: false
+        type: string
+        default: postgres:18
+        description: >-
+          Docker image for the e2e job's postgres service. Defaults to
+          plain postgres:18 - override with a variant like
+          postgis/postgis:18-3.6 if the caller's migrations need
+          extensions plain postgres doesn't ship.
       e2e-infisical-environment:
         required: false
         type: string
@@ -174,7 +183,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgis/postgis:18-3.6
+        image: ${{ inputs.e2e-postgres-image }}
         env:
           POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
