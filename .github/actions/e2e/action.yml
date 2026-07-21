@@ -33,6 +33,15 @@ inputs:
   e2e-setup-cache-path:
     required: false
     default: ''
+  e2e-setup-build-command:
+    required: false
+    default: ''
+    description: >-
+      Optional command (e.g. `pnpm --dir backend run build`) run before
+      e2e-setup-command, to prebuild a sibling directory's compiled
+      output. The build output at e2e-setup-cache-path/dist is cached,
+      keyed on that directory's source files, so unchanged code skips
+      rebuilding entirely. Only runs if e2e-setup-cache-path is also set.
   backend-infisical-site-url:
     required: false
     default: ''
@@ -128,6 +137,19 @@ runs:
       with:
         path: ${{ inputs.e2e-setup-cache-path }}/node_modules
         key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.e2e-setup-cache-path }}-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.e2e-setup-cache-path)) }}
+
+    - name: Cache e2e setup build output
+      id: e2e-setup-build-cache
+      if: ${{ inputs.e2e-setup-build-command != '' && inputs.e2e-setup-cache-path != '' }}
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.e2e-setup-cache-path }}/dist
+        key: ${{ runner.os }}-build-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.e2e-setup-cache-path }}-${{ hashFiles(format('{0}/src/**', inputs.e2e-setup-cache-path), format('{0}/package.json', inputs.e2e-setup-cache-path), format('{0}/tsconfig*.json', inputs.e2e-setup-cache-path)) }}
+
+    - name: Run e2e setup build command
+      if: ${{ inputs.e2e-setup-build-command != '' && inputs.e2e-setup-cache-path != '' && steps.e2e-setup-build-cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: ${{ inputs.e2e-setup-build-command }}
 
     - name: Run e2e stack setup
       if: ${{ inputs.e2e-setup-command != '' }}
