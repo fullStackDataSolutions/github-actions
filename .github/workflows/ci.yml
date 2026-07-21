@@ -11,10 +11,6 @@ on:
       pnpm-version:
         required: true
         type: string
-      sonar-enabled:
-        required: false
-        type: boolean
-        default: false
       nextjs-cache:
         required: false
         type: boolean
@@ -132,14 +128,6 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test -- --coverage
 
-      - name: Upload coverage
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage
-          path: ${{ inputs.working-directory }}/coverage/lcov.info
-          retention-days: 1
-          if-no-files-found: warn
-
       - name: Cache Next.js build
         if: ${{ inputs.nextjs-cache }}
         uses: actions/cache@v6
@@ -165,27 +153,6 @@ jobs:
           path: ${{ inputs.working-directory }}/.next
           retention-days: 1
           include-hidden-files: true
-
-  sonar:
-    needs: quality
-    if: ${{ inputs.sonar-enabled }}
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Download coverage
-        uses: actions/download-artifact@v8
-        with:
-          name: coverage
-          path: ${{ inputs.working-directory }}/coverage
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8
-        with:
-          projectBaseDir: ${{ inputs.working-directory }}
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   detect-e2e:
     if: ${{ inputs.e2e-enabled }}
