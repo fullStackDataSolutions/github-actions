@@ -24,9 +24,9 @@ on:
         type: boolean
         default: true
         description: >-
-          Whether to run e2e tests when they're detected (a
-          playwright.config.ts/.js in working-directory). Set to false to
-          skip e2e entirely regardless of detection.
+          Whether to run the e2e job when e2e tests are detected
+          (a playwright.config.ts/.js in working-directory). Set to false
+          to skip e2e entirely regardless of detection.
       e2e-setup-command:
         required: false
         type: string
@@ -50,14 +50,44 @@ on:
         required: false
         type: string
         default: postgres
+      e2e-postgres-image:
+        required: false
+        type: string
+        default: postgres:18
+        description: >-
+          Docker image for the e2e job's postgres service. Defaults to
+          plain postgres:18 - override with a variant like
+          postgis/postgis:18-3.6 if the caller's migrations need
+          extensions plain postgres doesn't ship.
+      e2e-infisical-environment:
+        required: false
+        type: string
+        default: ''
+        description: >-
+          Infisical environment slug to load secrets from for the e2e job.
+          Leave empty to skip Infisical entirely (both the e2e stack setup
+          command and the e2e test run boot with only the env already set).
+          Reads BACKEND_INFISICAL_SITE_URL/CLIENT_ID/CLIENT_SECRET/PROJECT_ID
+          for the e2e stack setup step and
+          FRONTEND_INFISICAL_SITE_URL/CLIENT_ID/CLIENT_SECRET/PROJECT_ID for
+          the e2e test run, via `secrets: inherit` on the caller's `uses:`
+          block.
+      e2e-setup-cache-path:
+        required: false
+        type: string
+        default: ''
+        description: >-
+          Optional sibling directory (e.g. a backend service the
+          e2e-setup-command installs and starts) whose node_modules should
+          be cached, keyed on that directory's own pnpm-lock.yaml. Leave
+          empty to skip - e2e-setup-command's own dependency install will
+          then run uncached every time.
 
 jobs:
-  build:
+  quality:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Validate working-directory
         run: |
@@ -70,17 +100,25 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node-version }}
-
       - uses: pnpm/action-setup@v6
         with:
           version: ${{ inputs.pnpm-version }}
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ inputs.working-directory }}/node_modules
+          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm install --frozen-lockfile --prefer-offline
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         working-directory: ${{ inputs.working-directory }}
@@ -94,15 +132,13 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test -- --coverage
 
-      - name: SonarQube Scan
-        if: ${{ inputs.sonar-enabled }}
-        uses: SonarSource/sonarqube-scan-action@v8
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
         with:
-          projectBaseDir: ${{ inputs.working-directory }}
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: coverage
+          path: ${{ inputs.working-directory }}/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: warn
 
       - name: Cache Next.js build
         if: ${{ inputs.nextjs-cache }}
@@ -117,6 +153,39 @@ jobs:
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         run: pnpm build
+
+      - name: Compute Next.js build artifact name
+        id: nextjs-artifact-name
+        run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Next.js build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.nextjs-artifact-name.outputs.name }}
+          path: ${{ inputs.working-directory }}/.next
+          retention-days: 1
+          include-hidden-files: true
+
+  sonar:
+    needs: quality
+    if: ${{ inputs.sonar-enabled }}
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Download coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage
+          path: ${{ inputs.working-directory }}/coverage
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   detect-e2e:
     if: ${{ inputs.e2e-enabled }}
@@ -135,12 +204,12 @@ jobs:
           fi
 
   e2e:
-    needs: [build, detect-e2e]
+    needs: [detect-e2e, quality]
     if: ${{ inputs.e2e-enabled && needs.detect-e2e.outputs.has-e2e == 'true' }}
     runs-on: self-hosted
     services:
       postgres:
-        image: postgres:18
+        image: ${{ inputs.e2e-postgres-image }}
         env:
           POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
@@ -154,18 +223,60 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node-version }}
       - uses: pnpm/action-setup@v6
         with:
           version: ${{ inputs.pnpm-version }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ inputs.working-directory }}/node_modules
+          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm install --frozen-lockfile --prefer-offline
+        run: pnpm install --frozen-lockfile
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ github.repository }}-${{ hashFiles('**/pnpm-lock.yaml') }}
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+      - name: Compute Next.js build artifact name
+        id: nextjs-artifact-name
+        run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+      - name: Download Next.js build
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.nextjs-artifact-name.outputs.name }}
+          path: ${{ inputs.working-directory }}/.next
+      - name: Prepare standalone Next.js server assets
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -d .next/standalone ]; then
+            cp -r public .next/standalone/public
+            mkdir -p .next/standalone/.next
+            cp -r .next/static .next/standalone/.next/static
+            # Next's output file tracer doesn't always capture every
+            # transitive dependency correctly (e.g. optional/dynamic
+            # requires) - symlink the fully-installed node_modules over
+            # the tracer's possibly-incomplete one rather than trust it.
+            rm -rf .next/standalone/node_modules
+            ln -s "$(pwd)/node_modules" .next/standalone/node_modules
+          fi
+      - name: Cache e2e setup dependencies
+        if: ${{ inputs.e2e-setup-cache-path != '' }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ inputs.e2e-setup-cache-path }}/node_modules
+          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.e2e-setup-cache-path }}-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.e2e-setup-cache-path)) }}
       - name: Run e2e stack setup
         if: ${{ inputs.e2e-setup-command != '' }}
         run: ${{ inputs.e2e-setup-command }}
@@ -175,15 +286,26 @@ jobs:
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+          INFISICAL_SITE_URL: ${{ secrets.BACKEND_INFISICAL_SITE_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.BACKEND_INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.BACKEND_INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.BACKEND_INFISICAL_PROJECT_ID }}
+          INFISICAL_ENVIRONMENT: ${{ inputs.e2e-infisical-environment }}
       - name: Run e2e tests
         working-directory: ${{ inputs.working-directory }}
         run: pnpm test:e2e
         env:
+          E2E_PREBUILT_FRONTEND: 'true'
           E2E_POSTGRES_HOST: localhost
           E2E_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
           E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
           E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
           E2E_POSTGRES_DB: ${{ inputs.e2e-postgres-db }}
+          INFISICAL_SITE_URL: ${{ secrets.FRONTEND_INFISICAL_SITE_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.FRONTEND_INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.FRONTEND_INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.FRONTEND_INFISICAL_PROJECT_ID }}
+          INFISICAL_ENVIRONMENT: ${{ inputs.e2e-infisical-environment }}
       - name: Compute artifact name
         if: always()
         id: artifact-name
@@ -196,3 +318,4 @@ jobs:
           path: ${{ inputs.working-directory }}/playwright-report
           retention-days: 7
           if-no-files-found: ignore
+
