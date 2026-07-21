@@ -78,6 +78,16 @@ on:
           be cached, keyed on that directory's own pnpm-lock.yaml. Leave
           empty to skip - e2e-setup-command's own dependency install will
           then run uncached every time.
+      e2e-setup-build-command:
+        required: false
+        type: string
+        default: ''
+        description: >-
+          Optional command (e.g. `pnpm --dir backend run build`) run
+          before e2e-setup-command, to prebuild a sibling directory's
+          compiled output. The build output at e2e-setup-cache-path/dist
+          is cached, keyed on that directory's source files. Only runs
+          if e2e-setup-cache-path is also set.
 
 jobs:
   quality:
@@ -204,6 +214,7 @@ jobs:
           e2e-postgres-port: ${{ job.services.postgres.ports['5432'] }}
           e2e-infisical-environment: ${{ inputs.e2e-infisical-environment }}
           e2e-setup-cache-path: ${{ inputs.e2e-setup-cache-path }}
+          e2e-setup-build-command: ${{ inputs.e2e-setup-build-command }}
           backend-infisical-site-url: ${{ secrets.BACKEND_INFISICAL_SITE_URL }}
           backend-infisical-client-id: ${{ secrets.BACKEND_INFISICAL_CLIENT_ID }}
           backend-infisical-client-secret: ${{ secrets.BACKEND_INFISICAL_CLIENT_SECRET }}
