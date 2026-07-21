@@ -150,7 +150,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.nextjs-artifact-name.outputs.name }}
-          path: ${{ inputs.working-directory }}/.next
+          path: |
+            ${{ inputs.working-directory }}/.next
+            !${{ inputs.working-directory }}/.next/cache
           retention-days: 1
           include-hidden-files: true
 
