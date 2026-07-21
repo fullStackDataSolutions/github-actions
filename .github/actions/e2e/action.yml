@@ -61,13 +61,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v6
-      with:
-        version: ${{ inputs.pnpm-version }}
-
     - uses: actions/setup-node@v6
       with:
         node-version: ${{ inputs.node-version }}
+
+    - uses: pnpm/action-setup@v6
+      with:
+        version: ${{ inputs.pnpm-version }}
 
     - name: Cache node_modules
       id: node-modules-cache
