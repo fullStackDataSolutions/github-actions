@@ -147,7 +147,7 @@ runs:
         key: ${{ runner.os }}-build-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.e2e-setup-cache-path }}-${{ hashFiles(format('{0}/src/**', inputs.e2e-setup-cache-path), format('{0}/package.json', inputs.e2e-setup-cache-path), format('{0}/tsconfig*.json', inputs.e2e-setup-cache-path)) }}
 
     - name: Run e2e setup build command
-      if: ${{ inputs.e2e-setup-build-command != '' && steps.e2e-setup-build-cache.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.e2e-setup-build-command != '' && inputs.e2e-setup-cache-path != '' && steps.e2e-setup-build-cache.outputs.cache-hit != 'true' }}
       shell: bash
       run: ${{ inputs.e2e-setup-build-command }}
 
