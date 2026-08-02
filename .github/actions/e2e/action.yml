@@ -78,6 +78,20 @@ runs:
       with:
         version: ${{ inputs.pnpm-version }}
 
+    - name: Resolve E2E Postgres host
+      id: e2e-postgres-host
+      shell: bash
+      run: |
+        host=localhost
+        if [ -f /.dockerenv ]; then
+          gateway="$(ip route show default 2>/dev/null | awk '/default/ { print $3; exit }')"
+          if [ -n "$gateway" ]; then
+            host="$gateway"
+          fi
+        fi
+        echo "host=$host" >> "$GITHUB_OUTPUT"
+        echo "E2E Postgres host: $host"
+
     - name: Cache node_modules
       id: node-modules-cache
       uses: actions/cache@v6
@@ -163,7 +177,7 @@ runs:
       shell: bash
       run: ${{ inputs.e2e-setup-command }}
       env:
-        E2E_POSTGRES_HOST: localhost
+        E2E_POSTGRES_HOST: ${{ steps.e2e-postgres-host.outputs.host }}
         E2E_POSTGRES_PORT: ${{ inputs.e2e-postgres-port }}
         E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
         E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
@@ -180,7 +194,7 @@ runs:
       run: pnpm test:e2e
       env:
         E2E_PREBUILT_FRONTEND: 'true'
-        E2E_POSTGRES_HOST: localhost
+        E2E_POSTGRES_HOST: ${{ steps.e2e-postgres-host.outputs.host }}
         E2E_POSTGRES_PORT: ${{ inputs.e2e-postgres-port }}
         E2E_POSTGRES_USER: ${{ inputs.e2e-postgres-user }}
         E2E_POSTGRES_PASSWORD: ${{ inputs.e2e-postgres-password }}
