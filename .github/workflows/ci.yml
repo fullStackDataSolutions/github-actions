@@ -202,7 +202,7 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/e2e
+      - uses: fullStackDataSolutions/github-actions/.github/actions/e2e@main
         with:
           working-directory: ${{ inputs.working-directory }}
           node-version: ${{ inputs.node-version }}
@@ -223,4 +223,3 @@ jobs:
           frontend-infisical-client-id: ${{ secrets.FRONTEND_INFISICAL_CLIENT_ID }}
           frontend-infisical-client-secret: ${{ secrets.FRONTEND_INFISICAL_CLIENT_SECRET }}
           frontend-infisical-project-id: ${{ secrets.FRONTEND_INFISICAL_PROJECT_ID }}
-
