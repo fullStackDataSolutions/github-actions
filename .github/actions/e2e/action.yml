@@ -84,9 +84,9 @@ runs:
       run: |
         host=localhost
         if [ -f /.dockerenv ]; then
-          gateway="$(ip route show default 2>/dev/null | awk '/default/ { print $3; exit }')"
-          if [ -n "$gateway" ]; then
-            host="$gateway"
+          gateway_hex="$(awk '$2 == "00000000" { print $3; exit }' /proc/net/route)"
+          if [[ "$gateway_hex" =~ ^[0-9A-Fa-f]{8}$ ]]; then
+            host="$((16#${gateway_hex:6:2})).$((16#${gateway_hex:4:2})).$((16#${gateway_hex:2:2})).$((16#${gateway_hex:0:2}))"
           fi
         fi
         echo "host=$host" >> "$GITHUB_OUTPUT"
