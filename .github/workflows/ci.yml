@@ -91,80 +91,13 @@ on:
 
 jobs:
   quality:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Validate working-directory
-        run: |
-          if [[ "${{ inputs.working-directory }}" == *".."* ]] || [[ "${{ inputs.working-directory }}" == /* ]]; then
-            echo "Error: Invalid working-directory: ${{ inputs.working-directory }}"
-            exit 1
-          fi
-          if [ ! -d "${{ inputs.working-directory }}" ]; then
-            echo "Error: Directory '${{ inputs.working-directory }}' does not exist"
-            exit 1
-          fi
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node-version }}
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ inputs.pnpm-version }}
-
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ inputs.node-version }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-
-      - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm typecheck
-
-      - name: Lint
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm lint
-
-      - name: Test
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm test -- --coverage
-
-      - name: Cache Next.js build
-        if: ${{ inputs.nextjs-cache }}
-        uses: actions/cache@v6
-        with:
-          path: ${{ inputs.working-directory }}/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-nextjs-${{ github.repository }}-${{ inputs.working-directory }}-
-
-      - name: Build
-        working-directory: ${{ inputs.working-directory }}
-        run: pnpm build
-
-      - name: Compute Next.js build artifact name
-        id: nextjs-artifact-name
-        run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
-
-      - name: Upload Next.js build
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.nextjs-artifact-name.outputs.name }}
-          path: |
-            ${{ inputs.working-directory }}/.next
-            !${{ inputs.working-directory }}/.next/cache
-          retention-days: 1
-          include-hidden-files: true
+    uses: ./.github/workflows/quality.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      node-version: ${{ inputs.node-version }}
+      pnpm-version: ${{ inputs.pnpm-version }}
+      nextjs-cache: ${{ inputs.nextjs-cache }}
+    secrets: inherit
 
   detect-e2e:
     if: ${{ inputs.e2e-enabled }}
