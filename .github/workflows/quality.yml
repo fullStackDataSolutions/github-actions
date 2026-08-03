@@ -64,7 +64,7 @@ jobs:
 
       - name: Test
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm test -- --coverage
+        run: pnpm test -- --coverage --silent
 
       - name: Cache Next.js build
         if: ${{ inputs.nextjs-cache }}
