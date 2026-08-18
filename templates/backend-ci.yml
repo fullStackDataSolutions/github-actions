@@ -1,0 +1,172 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '9.15.9'
+
+jobs:
+  # A trigger-level `paths:` filter makes this whole workflow never run at
+  # all on a PR that doesn't touch backend/ - and a workflow that never runs
+  # produces no check run, so a branch-protection required check pointed at
+  # it waits forever instead of reporting skipped. Detecting the change here
+  # instead lets the workflow always fire, so its jobs always register -
+  # real work only happens when backend/ is touched.
+  changes:
+    runs-on: self-hosted
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend changes
+        id: detect
+        shell: bash
+        run: |
+          changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+
+          backend=false
+          while IFS= read -r file; do
+            case "$file" in
+              backend/*|.github/workflows/backend-ci.yml) backend=true ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "Backend changed: $backend"
+          echo "$changed_files"
+
+  backend-ci:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: fullStackDataSolutions/github-actions/.github/workflows/ci.yml@main
+    with:
+      working-directory: backend
+      node-version: '24'
+      pnpm-version: '9.15.9'
+      # e2e-enabled: false also skips quality.yml's Next.js build upload
+      # (see quality.yml's e2e-enabled input) - a NestJS backend has no
+      # Next.js build to upload anyway. If this project's e2e job runs
+      # inside the shared workflow instead of a dedicated job below, set
+      # this true and remove the dedicated backend-e2e job.
+      e2e-enabled: false
+
+  # Customize per project: this example runs Jest + supertest against a
+  # real ephemeral Postgres, since the shared workflow's e2e job is
+  # Playwright-specific (detects playwright.config.*, installs browsers,
+  # downloads a Next.js build artifact) and doesn't fit a backend e2e suite.
+  # Swap the image/env/steps below for whatever this project's backend e2e
+  # setup actually needs, or delete this job and set e2e-enabled: true above
+  # if a Playwright-style e2e suite fits instead.
+  backend-e2e:
+    needs: [changes, backend-ci]
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: self-hosted
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: app_test
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      # When the self-hosted runner itself runs inside a container, the
+      # service container is reachable on the default gateway rather than
+      # localhost.
+      - name: Resolve Postgres host
+        id: postgres-host
+        shell: bash
+        run: |
+          host=localhost
+          if [ -f /.dockerenv ]; then
+            gateway_hex="$(awk '$2 == "00000000" { print $3; exit }' /proc/net/route)"
+            if [[ "$gateway_hex" =~ ^[0-9A-Fa-f]{8}$ ]]; then
+              host="$((16#${gateway_hex:6:2})).$((16#${gateway_hex:4:2})).$((16#${gateway_hex:2:2})).$((16#${gateway_hex:0:2}))"
+            fi
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "Postgres host: $host"
+
+      # Same key shape the shared quality/e2e jobs use, so this job reuses
+      # their cache entry instead of installing from scratch.
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6
+        with:
+          path: backend/node_modules
+          key: ${{ runner.os }}-node-modules-${{ github.repository }}-${{ env.NODE_VERSION }}-backend-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migration chain
+        working-directory: backend
+        env:
+          DB_HOST: ${{ steps.postgres-host.outputs.host }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: pnpm run migration:run
+
+      - name: Run backend e2e tests
+        working-directory: backend
+        env:
+          DB_HOST: ${{ steps.postgres-host.outputs.host }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: pnpm run test:e2e
+
+  # The branch-protection required check points here, not at backend-ci's own
+  # nested checks - those live inside a reusable workflow call and never get
+  # created at all when backend-ci is skipped (see the changes job above).
+  # This job runs unconditionally so it always reports: a trivial pass when
+  # backend/ wasn't touched, or the real backend-ci/backend-e2e result when
+  # it was. Point this project's branch-protection required status check at
+  # `backend-ci-required`, not at any nested `backend-ci / ...` check name.
+  backend-ci-required:
+    name: backend-ci-required
+    needs: [changes, backend-ci, backend-e2e]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Check backend CI result
+        shell: bash
+        run: |
+          if [ "${{ needs.changes.outputs.backend }}" != "true" ]; then
+            echo "backend/ unchanged - nothing to verify."
+            exit 0
+          fi
+          if [ "${{ needs.backend-ci.result }}" != "success" ] || [ "${{ needs.backend-e2e.result }}" != "success" ]; then
+            echo "backend-ci or backend-e2e failed."
+            exit 1
+          fi
+          echo "backend-ci and backend-e2e passed."
