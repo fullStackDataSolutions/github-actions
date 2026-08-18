@@ -94,8 +94,16 @@ jobs:
         id: nextjs-artifact-name
         run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
+      # Off by default account-wide: this org is on GitHub's free Actions
+      # storage tier (no org-level Actions variables to flip this in one
+      # place), and every account-wide repo blew through that quota
+      # uploading this artifact on every run whether e2e needed it or not.
+      # A repo that genuinely needs its e2e job to have the build available
+      # opts back in by setting its own repo variable
+      # CI_ARTIFACT_UPLOAD_ENABLED=true (Settings > Secrets and variables >
+      # Actions > Variables).
       - name: Upload Next.js build
-        if: ${{ inputs.e2e-enabled }}
+        if: ${{ inputs.e2e-enabled && vars.CI_ARTIFACT_UPLOAD_ENABLED == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.nextjs-artifact-name.outputs.name }}
