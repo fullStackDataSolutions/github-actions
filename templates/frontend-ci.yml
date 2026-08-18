@@ -1,0 +1,148 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A trigger-level `paths:` filter makes this whole workflow never run at
+  # all on a PR that doesn't touch frontend/ - and a workflow that never runs
+  # produces no check run, so a branch-protection required check pointed at
+  # it waits forever instead of reporting skipped. Detecting the change here
+  # instead lets the workflow always fire, so its jobs always register -
+  # real work only happens when frontend/ is touched.
+  changes:
+    runs-on: self-hosted
+    outputs:
+      frontend: ${{ steps.detect.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect frontend changes
+        id: detect
+        shell: bash
+        run: |
+          changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+
+          frontend=false
+          while IFS= read -r file; do
+            case "$file" in
+              frontend/*|.github/workflows/frontend-ci.yml) frontend=true ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "Frontend changed: $frontend"
+          echo "$changed_files"
+
+  # Customize per project: narrows e2e-enabled further than "frontend
+  # changed at all" - a copy-only or style-only change doesn't need a full
+  # Playwright run. Adjust the path list below to whatever this project's
+  # e2e suite actually depends on, or delete this job and pass
+  # e2e-enabled: ${{ needs.changes.outputs.frontend == 'true' }} directly if
+  # that finer split isn't worth it here.
+  e2e-impact:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: self-hosted
+    outputs:
+      enabled: ${{ steps.detect.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect e2e-relevant changes
+        id: detect
+        shell: bash
+        run: |
+          changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+
+          enabled=false
+          while IFS= read -r file; do
+            case "$file" in
+              .github/scripts/e2e-setup.sh|\
+              .github/workflows/frontend-ci.yml|\
+              frontend/app/*|frontend/app/**|\
+              frontend/components/*|frontend/components/**|\
+              frontend/graphql/*|frontend/graphql/**|\
+              frontend/lib/*|frontend/lib/**|\
+              frontend/tests/e2e/*|frontend/tests/e2e/**|\
+              frontend/generated/*|frontend/generated/**|\
+              frontend/instrumentation.ts|\
+              frontend/instrumentation-client.ts|\
+              frontend/middleware.ts|\
+              frontend/next.config.*|\
+              frontend/package.json|\
+              frontend/playwright.config.*|\
+              frontend/pnpm-lock.yaml|\
+              frontend/postcss.config.*|\
+              frontend/tailwind.config.*)
+                enabled=true
+                break
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          echo "E2E enabled: $enabled"
+          echo "$changed_files"
+
+  frontend-ci:
+    needs: [changes, e2e-impact]
+    if: needs.changes.outputs.frontend == 'true'
+    uses: fullStackDataSolutions/github-actions/.github/workflows/ci.yml@main
+    with:
+      working-directory: frontend
+      node-version: '24'
+      pnpm-version: '9.15.9'
+      nextjs-cache: true
+      e2e-enabled: ${{ needs.e2e-impact.outputs.enabled == 'true' }}
+      # Customize per project: setup command, cache path, and Postgres image
+      # for whatever this project's e2e stack (sibling backend, DB
+      # extensions, etc.) actually needs. Drop these inputs entirely if the
+      # frontend has no sibling-service e2e setup.
+      e2e-setup-command: bash .github/scripts/e2e-setup.sh
+      e2e-setup-build-command: pnpm --dir backend run build
+      e2e-setup-cache-path: backend
+      e2e-postgres-image: postgres:18
+      e2e-infisical-environment: staging
+    # secrets: inherit is required here, not optional - the shared ci.yml@main
+    # workflow declares no `secrets:` schema under `workflow_call`, so GitHub
+    # Actions rejects any attempt to pass individually-named/aliased secrets
+    # to it. The secret names it reads internally
+    # (BACKEND_INFISICAL_*/FRONTEND_INFISICAL_*) must exist verbatim as this
+    # repo's own GitHub Actions secrets.
+    secrets: inherit
+
+  # The branch-protection required check points here, not at frontend-ci's
+  # own nested checks - those live inside a reusable workflow call and never
+  # get created at all when frontend-ci is skipped (see the changes job
+  # above). This job runs unconditionally so it always reports: a trivial
+  # pass when frontend/ wasn't touched, or the real frontend-ci result when
+  # it was. Point this project's branch-protection required status check at
+  # `frontend-ci-required`, not at any nested `frontend-ci / ...` check name.
+  frontend-ci-required:
+    name: frontend-ci-required
+    needs: [changes, frontend-ci]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Check frontend CI result
+        shell: bash
+        run: |
+          if [ "${{ needs.changes.outputs.frontend }}" != "true" ]; then
+            echo "frontend/ unchanged - nothing to verify."
+            exit 0
+          fi
+          if [ "${{ needs.frontend-ci.result }}" != "success" ]; then
+            echo "frontend-ci failed."
+            exit 1
+          fi
+          echo "frontend-ci passed."

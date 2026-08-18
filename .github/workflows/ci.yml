@@ -97,6 +97,7 @@ jobs:
       node-version: ${{ inputs.node-version }}
       pnpm-version: ${{ inputs.pnpm-version }}
       nextjs-cache: ${{ inputs.nextjs-cache }}
+      e2e-enabled: ${{ inputs.e2e-enabled }}
     secrets: inherit
 
   detect-e2e:
@@ -117,7 +118,11 @@ jobs:
 
   e2e:
     needs: [detect-e2e, quality]
-    if: ${{ inputs.e2e-enabled && needs.detect-e2e.outputs.has-e2e == 'true' }}
+    # quality.yml only uploads the build artifact this job downloads when
+    # CI_ARTIFACT_UPLOAD_ENABLED=true is set on the calling repo (off by
+    # default account-wide, see quality.yml) - without it there's nothing to
+    # download, so skip rather than fail on a missing artifact.
+    if: ${{ inputs.e2e-enabled && needs.detect-e2e.outputs.has-e2e == 'true' && vars.CI_ARTIFACT_UPLOAD_ENABLED == 'true' }}
     runs-on: self-hosted
     services:
       postgres:
