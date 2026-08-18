@@ -16,6 +16,16 @@ on:
         required: false
         type: boolean
         default: false
+      e2e-enabled:
+        required: false
+        type: boolean
+        default: true
+        description: >-
+          Whether the caller's e2e job might run and need this job's Next.js
+          build artifact. The upload step is skipped entirely when false,
+          since a caller that never runs e2e was uploading a build artifact
+          nothing ever downloaded - burning Actions storage quota on every
+          single run for no reason.
 
 jobs:
   quality:
@@ -85,6 +95,7 @@ jobs:
         run: echo "name=nextjs-build-$(echo '${{ inputs.working-directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
       - name: Upload Next.js build
+        if: ${{ inputs.e2e-enabled }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.nextjs-artifact-name.outputs.name }}

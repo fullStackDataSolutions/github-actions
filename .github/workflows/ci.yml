@@ -97,6 +97,7 @@ jobs:
       node-version: ${{ inputs.node-version }}
       pnpm-version: ${{ inputs.pnpm-version }}
       nextjs-cache: ${{ inputs.nextjs-cache }}
+      e2e-enabled: ${{ inputs.e2e-enabled }}
     secrets: inherit
 
   detect-e2e:
